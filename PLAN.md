@@ -52,6 +52,6 @@
   - Tombol UI "Ganti Mode" pada header bar dengan indikator shortcut (Ctrl+S).
   - Listener global keyboard `Ctrl+S` untuk toggle/masuk Mode Guru (dengan dialog password).
   - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
-- [ ] Inisialisasi Git & Push ke GitHub (`https://github.com/UsmanAzizz/NetSim.git`).
+- [x] Inisialisasi Git & Push ke GitHub (`https://github.com/UsmanAzizz/NetSim.git`) berhasil di branch `main`.
 
 
