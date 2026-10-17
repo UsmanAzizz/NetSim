@@ -53,5 +53,11 @@
   - Listener global keyboard `Ctrl+S` untuk toggle/masuk Mode Guru (dengan dialog password).
   - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
 - [x] Inisialisasi Git & Push ke GitHub (`https://github.com/UsmanAzizz/NetSim.git`) berhasil di branch `main`.
+- [x] Mekanisme Centang Biru (Read Status) WhatsApp di Ruang Chat LAN:
+  - Transisi bertahap: Sent (centang 1 abu) -> Delivered (centang 2 abu) -> Read (centang 2 biru cerah).
+  - Tampilan visual ikon `CheckCheck` warna biru cerah (`text-sky-400 font-bold`).
+  - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
+
+
 
 

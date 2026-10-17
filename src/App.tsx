@@ -566,12 +566,24 @@ export default function App() {
         file: fileToSend || null
       });
 
-      // Simulasi konfirmasi jaringan (Centang 2): jika ada komputer lab lain yang terdeteksi
-      if (peerIps.length > 0) {
+      // Mekanisme Konfirmasi Centang WhatsApp Bertahap:
+      // Tahap 1 (500ms): Centang 2 Abu-abu (Delivered / Tersampaikan ke jaringan)
+      setTimeout(() => {
+        setChatHistory(prev => prev.map(m => m.id === msgId && m.status !== 'failed' ? { 
+          ...m, 
+          status: 'delivered', 
+          statusReason: peerIps.length > 0 ? 'Tersampaikan ke komputer lab di jaringan' : 'Tersampaikan ke subnet broadcast' 
+        } : m));
+
+        // Tahap 2 (1200ms kemudian): Centang 2 Biru (Read / Telah dibaca oleh teman di jaringan)
         setTimeout(() => {
-          setChatHistory(prev => prev.map(m => m.id === msgId ? { ...m, status: 'delivered', statusReason: 'Tersampaikan ke komputer lab di jaringan' } : m));
-        }, 400);
-      }
+          setChatHistory(prev => prev.map(m => m.id === msgId && m.status !== 'failed' ? { 
+            ...m, 
+            status: 'read', 
+            statusReason: 'Telah dibaca oleh teman di jaringan lab' 
+          } : m));
+        }, 1200);
+      }, 500);
     } catch (err) {
       console.error("Gagal kirim chat:", err);
       setChatHistory(prev => prev.map(m => m.id === msgId ? { ...m, status: 'failed', statusReason: `Gagal mengirim paket: ${err}` } : m));
@@ -1010,11 +1022,11 @@ export default function App() {
                           ) : msg.status === 'pending' ? (
                             <Clock className="w-3 h-3 text-zinc-300 animate-pulse" title="Sedang mengirim..." />
                           ) : msg.status === 'sent' ? (
-                            <Check className="w-3.5 h-3.5 text-zinc-300" title="Terkirim ke soket lokal" />
+                            <Check className="w-3.5 h-3.5 text-zinc-300" title="Terkirim ke soket lokal (Centang 1)" />
                           ) : msg.status === 'delivered' ? (
-                            <CheckCheck className="w-3.5 h-3.5 text-zinc-300" title="Tersampaikan ke komputer lab" />
+                            <CheckCheck className="w-3.5 h-3.5 text-zinc-300" title="Tersampaikan ke komputer lab (Centang 2 Abu-abu)" />
                           ) : (
-                            <CheckCheck className="w-3.5 h-3.5 text-sky-300" title="Diterima oleh komputer lab" />
+                            <CheckCheck className="w-3.5 h-3.5 text-sky-400 font-bold" title="Telah dibaca oleh teman lab (Centang 2 Biru)" />
                           )
                         )}
                       </div>
