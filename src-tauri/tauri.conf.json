@@ -37,5 +37,13 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCMDNDQ0EyOTU0MDFBN0IKUldSN0drQ1Zvc3dEMjdZYkhETGxHc1NhS1VkL2l1YzcyUzhuU2hCcDc5U2VIU3o2biswVnVrcFAK",
+      "endpoints": [
+        "https://github.com/UsmanAzizz/NetSim/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

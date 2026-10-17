@@ -69,6 +69,16 @@
   - Konfigurasi `tauri.conf.json`: `"maximized": true`, `"fullscreen": false`.
   - Setup Rust `lib.rs`: hook `main_window.maximize()` otomatis saat aplikasi pertama kali diluncurkan.
 
+- [x] Konfigurasi Auto-Update Gratis (GitHub Releases & Tauri Updater):
+  - Generate signing keypair (`tauri signer generate` dengan ED25519/minisign).
+  - Instal dependensi `tauri-plugin-updater` di Rust dan `@tauri-apps/plugin-updater` di npm.
+  - Daftarkan plugin di `lib.rs` dan konfigurasi endpoints `latest.json` serta pubkey di `tauri.conf.json`.
+  - Tambahkan permission updater di `src-tauri/capabilities/default.json`.
+  - Integrasi dialog UI "Pembaruan Tersedia" & tombol "Cek Update" di `App.tsx` (header dan halaman awal) dengan status progress bar pengunduhan.
+  - Buat workflow CI/CD otomatis `.github/workflows/release.yml` untuk build installer Windows dan publikasi release di GitHub Releases.
+  - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
+
+
 
 
 

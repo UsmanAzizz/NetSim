@@ -28,3 +28,9 @@ src-tauri/target/
 target/
 src-tauri/gen/schemas/
 .backup_replace/
+
+# Tauri signing keys
+*.key
+*.key.pub
+.tauri/
+

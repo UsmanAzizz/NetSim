@@ -780,6 +780,7 @@ fn start_radar(app: AppHandle, name: String, role: String) -> Result<String, Str
 pub fn run() {
   start_http_file_server();
   tauri::Builder::default()
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .invoke_handler(tauri::generate_handler![
         start_radar, 
         execute_ping, 

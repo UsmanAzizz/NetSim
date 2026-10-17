@@ -1,0 +1,55 @@
+name: 'Rilis & Pembaruan Otomatis NetSim'
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies
+        run: npm ci || npm install
+
+      - name: Build & Publish Release with Updater Signatures
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'NetSim ${{ github.ref_name }}'
+          releaseBody: |
+            ## Pembaruan NetSim ${{ github.ref_name }}
+            
+            Versi terbaru ini mencakup peningkatan performa, perbaikan bug, dan fitur simulasi baru untuk praktikum jaringan LAN.
+            
+            ### Cara Memperbarui:
+            - **Bagi pengguna terinstal**: Buka NetSim dan klik tombol **Cek Update** atau tunggu deteksi otomatis di header bar.
+            - **Bagi pengguna baru**: Unduh file installer `.exe` / `.msi` di bawah ini.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

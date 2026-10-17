@@ -29,10 +29,13 @@ import {
   ArrowRight,
   Home,
   WifiOff,
-  Search
+  Search,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { check } from '@tauri-apps/plugin-updater';
 
 type WebFetchResult = {
   success: boolean;
@@ -156,6 +159,17 @@ export default function App() {
   const [browserResult, setBrowserResult] = useState<WebFetchResult | null>(null);
   const [browserHistory, setBrowserHistory] = useState<string[]>(['https://www.google.com']);
   const [browserHistoryIdx, setBrowserHistoryIdx] = useState<number>(0);
+
+  // Auto-Updater States (Rule 1: Pre-define variables)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string; date?: string } | null>(null);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [updateProgress, setUpdateProgress] = useState<{ downloaded: number; total: number; percent: number }>({ downloaded: 0, total: 0, percent: 0 });
+  const [updateDownloaded, setUpdateDownloaded] = useState<boolean>(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
+  const [pendingUpdateObj, setPendingUpdateObj] = useState<any>(null);
 
   const formatFileSize = (bytes: number): string => {
     if (!bytes || bytes === 0) return '0 B';
@@ -348,6 +362,77 @@ export default function App() {
     }
     setIsEditingName(false);
   };
+
+  // Handler untuk Memeriksa Pembaruan Aplikasi (GitHub Releases)
+  const handleCheckUpdate = async (manual: boolean = false) => {
+    setIsCheckingUpdate(true);
+    setUpdateError(null);
+    try {
+      const update = await check();
+      if (update?.available) {
+        setUpdateAvailable(true);
+        setPendingUpdateObj(update);
+        setUpdateInfo({
+          version: update.version,
+          body: update.body || 'Pembaruan versi terbaru untuk NetSim telah tersedia dan siap diunduh.',
+          date: update.date
+        });
+        setIsUpdateModalOpen(true);
+      } else {
+        setUpdateAvailable(false);
+        setPendingUpdateObj(null);
+        if (manual) {
+          alert('Selamat! NetSim sudah menggunakan versi terbaru (v0.1.0).');
+        }
+      }
+    } catch (err: any) {
+      console.warn('Gagal memeriksa pembaruan:', err);
+      if (manual) {
+        setUpdateError(err?.message || 'Tidak dapat terhubung ke server pembaruan GitHub Releases.');
+        setIsUpdateModalOpen(true);
+      }
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  // Handler untuk Mengunduh dan Memasang Pembaruan
+  const handleApplyUpdate = async () => {
+    if (!pendingUpdateObj) return;
+    setIsUpdating(true);
+    setUpdateError(null);
+    let downloadedBytes = 0;
+    let totalBytes = 0;
+
+    try {
+      await pendingUpdateObj.downloadAndInstall((event: any) => {
+        if (event.event === 'Started') {
+          totalBytes = event.data?.contentLength || 0;
+          setUpdateProgress({ downloaded: 0, total: totalBytes, percent: 0 });
+        } else if (event.event === 'Progress') {
+          downloadedBytes += event.data?.chunkLength || 0;
+          const pct = totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : 0;
+          setUpdateProgress({ downloaded: downloadedBytes, total: totalBytes, percent: pct });
+        } else if (event.event === 'Finished') {
+          setUpdateProgress({ downloaded: totalBytes, total: totalBytes, percent: 100 });
+        }
+      });
+      setUpdateDownloaded(true);
+    } catch (err: any) {
+      console.error('Gagal mengunduh pembaruan:', err);
+      setUpdateError(err?.message || 'Gagal mengunduh atau memasang pembaruan otomatis.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Auto-check update di background saat pertama kali aplikasi dibuka
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleCheckUpdate(false);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1092,6 +1177,149 @@ export default function App() {
     );
   };
 
+  const renderUpdateModal = () => {
+    if (!isUpdateModalOpen) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl border border-zinc-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          {/* Header Modal */}
+          <div className="px-5 py-4 border-b border-zinc-100 flex items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50/50">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-purple-100 text-purple-700 rounded-lg shadow-2xs">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-zinc-900">Pembaruan NetSim</h3>
+                <p className="text-[11px] text-zinc-500">Version Control & Auto-Updater</p>
+              </div>
+            </div>
+            {!isUpdating && (
+              <button 
+                type="button"
+                onClick={() => setIsUpdateModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 p-1 rounded-md hover:bg-zinc-200/50 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Konten Modal */}
+          <div className="p-5 space-y-4 text-xs">
+            {updateError ? (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-xs">Pemeriksaan Pembaruan Gagal</p>
+                  <p className="text-[11px] text-red-600 leading-relaxed">{updateError}</p>
+                </div>
+              </div>
+            ) : updateDownloaded ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-center space-y-2">
+                <div className="inline-flex p-2 bg-emerald-100 rounded-full text-emerald-600 mb-1">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="font-bold text-sm text-emerald-900">Pembaruan Siap Diterapkan!</h4>
+                <p className="text-xs text-emerald-700 leading-relaxed">
+                  Berkas pembaruan telah berhasil diunduh dan diverifikasi secara kriptografis. Silakan tutup dan buka kembali aplikasi untuk menikmati fitur terbaru.
+                </p>
+              </div>
+            ) : updateInfo ? (
+              <>
+                <div className="flex items-center justify-between p-3 bg-zinc-50 border border-zinc-200 rounded-lg">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">Versi Saat Ini</span>
+                    <span className="font-mono font-semibold text-zinc-700">v0.1.0</span>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-zinc-400" />
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-purple-600 block tracking-wider">Versi Baru Tersedia</span>
+                    <span className="font-mono font-bold text-purple-700 text-sm">v{updateInfo.version}</span>
+                  </div>
+                </div>
+
+                {/* Catatan Rilis */}
+                <div>
+                  <label className="text-[11px] font-semibold text-zinc-700 mb-1.5 block">Catatan Pembaruan:</label>
+                  <div className="max-h-36 overflow-y-auto p-3 bg-zinc-50 border border-zinc-200 rounded-lg font-mono text-[11px] text-zinc-700 leading-relaxed whitespace-pre-line">
+                    {updateInfo.body}
+                  </div>
+                </div>
+
+                {/* Progress Bar jika sedang mengunduh */}
+                {isUpdating && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between text-[11px] text-zinc-600 font-medium">
+                      <span>Mengunduh berkas installer...</span>
+                      <span>{updateProgress.percent}%</span>
+                    </div>
+                    <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-purple-600 h-full rounded-full transition-all duration-200 ease-out" 
+                        style={{ width: `${updateProgress.percent}%` }}
+                      />
+                    </div>
+                    {updateProgress.total > 0 && (
+                      <div className="text-[10px] text-zinc-400 text-right font-mono">
+                        {formatFileSize(updateProgress.downloaded)} / {formatFileSize(updateProgress.total)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-4 text-zinc-500">
+                <RotateCw className="w-6 h-6 animate-spin mx-auto mb-2 text-zinc-400" />
+                <p>Memeriksa ketersediaan versi baru di GitHub...</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer Tombol Aksi */}
+          <div className="px-5 py-3.5 bg-zinc-50 border-t border-zinc-100 flex items-center justify-end gap-2.5">
+            {updateDownloaded ? (
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+              >
+                Mulai Ulang Aplikasi
+              </button>
+            ) : updateInfo && !isUpdating ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsUpdateModalOpen(false)}
+                  className="px-3.5 py-2 border border-zinc-300 hover:bg-zinc-100 text-zinc-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Nanti Saja
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyUpdate}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh & Perbarui</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsUpdateModalOpen(false)}
+                disabled={isUpdating}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-900 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Tutup
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // =========================================================================
   // MODE UTAMA (UNIFIED: GURU & SISWA DENGAN PENYESUAIAN)
   // =========================================================================
@@ -1149,6 +1377,7 @@ export default function App() {
         {renderTeacherAlertModal()}
         {renderPasswordModal()}
         {renderBuiltInBrowserModal()}
+        {renderUpdateModal()}
 
         {/* Header Bar Utuh */}
         <header className="flex-none h-11 border-b border-zinc-200 px-4 flex items-center justify-between bg-white">
@@ -1160,7 +1389,10 @@ export default function App() {
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
-            <span className="font-bold text-sm tracking-tight text-zinc-900">NetSim</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-sm tracking-tight text-zinc-900">NetSim</span>
+              <span className="text-[10px] bg-zinc-100 text-zinc-600 px-1.5 py-0.2 rounded font-mono font-medium">v0.1.0</span>
+            </div>
             <span className="text-zinc-300">/</span>
             <span className={`text-xs font-semibold ${role === 'teacher' ? 'text-amber-700' : 'text-zinc-600'}`}>
               {role === 'teacher' ? 'Mode Guru' : 'Mode Siswa'}
@@ -1196,6 +1428,20 @@ export default function App() {
             >
               <Globe className="w-3 h-3 text-blue-600" />
               <span>Web Browser</span>
+            </button>
+
+            {/* Tombol Cek Pembaruan Versi */}
+            <button
+              onClick={() => handleCheckUpdate(true)}
+              disabled={isCheckingUpdate}
+              className="ml-1 px-2.5 py-0.5 text-[11px] font-medium rounded border border-purple-200 hover:border-purple-300 bg-purple-50/70 hover:bg-purple-100 text-purple-700 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-60 relative"
+              title="Periksa Pembaruan Fitur NetSim Terbaru"
+            >
+              <Sparkles className={`w-3 h-3 text-purple-600 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+              <span>{isCheckingUpdate ? 'Memeriksa...' : (updateAvailable ? 'Update Siap!' : 'Cek Update')}</span>
+              {updateAvailable && (
+                <span className="w-2 h-2 rounded-full bg-purple-600 animate-ping absolute -top-0.5 -right-0.5"></span>
+              )}
             </button>
           </div>
 
@@ -1825,6 +2071,7 @@ export default function App() {
   return (
     <div className="fixed inset-0 h-screen w-screen bg-zinc-100 text-zinc-900 flex flex-col items-center justify-center p-4 font-sans select-none overflow-hidden overscroll-none">
       {renderPasswordModal()}
+      {renderUpdateModal()}
       <div className="max-w-md w-full bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm space-y-6">
         <div className="text-center space-y-1.5">
           <div className="inline-flex items-center justify-center p-2.5 bg-zinc-100 border border-zinc-200 rounded-xl text-zinc-800 mb-1">
@@ -1854,6 +2101,19 @@ export default function App() {
             <Monitor className="w-5 h-5 text-zinc-700 mb-2" />
             <h3 className="text-sm font-bold text-zinc-900">Mode Siswa</h3>
             <p className="text-[11px] text-zinc-500 mt-1">Uji ping & terima instruksi.</p>
+          </button>
+        </div>
+
+        <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500">
+          <span className="font-mono text-zinc-400">NetSim v0.1.0</span>
+          <button
+            type="button"
+            onClick={() => handleCheckUpdate(true)}
+            disabled={isCheckingUpdate}
+            className="text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <Sparkles className={`w-3 h-3 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+            <span>{isCheckingUpdate ? 'Memeriksa...' : (updateAvailable ? 'Update Tersedia!' : 'Cek Pembaruan')}</span>
           </button>
         </div>
       </div>
