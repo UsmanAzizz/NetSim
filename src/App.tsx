@@ -24,10 +24,25 @@ import {
   CheckCircle2,
   Globe,
   Lock,
-  KeyRound
+  KeyRound,
+  RotateCw,
+  ArrowRight,
+  Home,
+  WifiOff,
+  Search
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+
+type WebFetchResult = {
+  success: boolean;
+  status_code: number;
+  remote_ip: string;
+  latency_ms: number;
+  html: string;
+  final_url: string;
+  error_msg?: string;
+};
 
 type FileAttachment = {
   id: string;
@@ -133,6 +148,15 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
 
+  // Built-in Browser States (Rule 1: Pre-define variables)
+  const [isBrowserModalOpen, setIsBrowserModalOpen] = useState<boolean>(false);
+  const [browserUrlInput, setBrowserUrlInput] = useState<string>('https://www.google.com');
+  const [browserCurrentUrl, setBrowserCurrentUrl] = useState<string>('https://www.google.com');
+  const [browserLoading, setBrowserLoading] = useState<boolean>(false);
+  const [browserResult, setBrowserResult] = useState<WebFetchResult | null>(null);
+  const [browserHistory, setBrowserHistory] = useState<string[]>(['https://www.google.com']);
+  const [browserHistoryIdx, setBrowserHistoryIdx] = useState<number>(0);
+
   const formatFileSize = (bytes: number): string => {
     if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
@@ -226,16 +250,90 @@ export default function App() {
         } else {
           handleRequestTeacherMode();
         }
-      } else if (e.key === 'Escape' && isPasswordModalOpen) {
-        setIsPasswordModalOpen(false);
-        setPasswordInput('');
-        setPasswordError('');
+      } else if (e.key === 'Escape') {
+        if (isPasswordModalOpen) {
+          setIsPasswordModalOpen(false);
+          setPasswordInput('');
+          setPasswordError('');
+        } else if (isBrowserModalOpen) {
+          setIsBrowserModalOpen(false);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [role, isPasswordModalOpen]);
+  }, [role, isPasswordModalOpen, isBrowserModalOpen]);
+
+  // Listener navigasi tautan dari dalam iframe browser
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data && e.data.type === 'netsim-nav' && typeof e.data.url === 'string') {
+        const nextUrl = e.data.url;
+        setBrowserUrlInput(nextUrl);
+        handleNavigateBrowser(nextUrl);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [gatewayActive, browserLoading]);
+
+  const handleNavigateBrowser = async (targetUrl?: string) => {
+    const rawUrl = (targetUrl !== undefined ? targetUrl : browserUrlInput).trim();
+    if (!rawUrl || browserLoading) return;
+
+    setBrowserLoading(true);
+    try {
+      const res = await invoke<WebFetchResult>('test_web_connection', {
+        url: rawUrl,
+        gatewayActive
+      });
+      setBrowserResult(res);
+      setBrowserCurrentUrl(res.final_url);
+      setBrowserUrlInput(res.final_url);
+
+      if (targetUrl !== undefined || rawUrl !== browserCurrentUrl) {
+        setBrowserHistory(prev => {
+          const next = prev.slice(0, browserHistoryIdx + 1);
+          return [...next, res.final_url];
+        });
+        setBrowserHistoryIdx(prev => prev + 1);
+      }
+    } catch (err) {
+      console.error('Browser navigation error:', err);
+      setBrowserResult({
+        success: false,
+        status_code: 0,
+        remote_ip: '',
+        latency_ms: 0,
+        html: '',
+        final_url: rawUrl,
+        error_msg: String(err)
+      });
+    } finally {
+      setBrowserLoading(false);
+    }
+  };
+
+  const handleBrowserBack = () => {
+    if (browserHistoryIdx > 0) {
+      const prevIdx = browserHistoryIdx - 1;
+      const prevUrl = browserHistory[prevIdx];
+      setBrowserHistoryIdx(prevIdx);
+      setBrowserUrlInput(prevUrl);
+      handleNavigateBrowser(prevUrl);
+    }
+  };
+
+  const handleBrowserForward = () => {
+    if (browserHistoryIdx < browserHistory.length - 1) {
+      const nextIdx = browserHistoryIdx + 1;
+      const nextUrl = browserHistory[nextIdx];
+      setBrowserHistoryIdx(nextIdx);
+      setBrowserUrlInput(nextUrl);
+      handleNavigateBrowser(nextUrl);
+    }
+  };
 
   const handleSaveName = async () => {
     const trimmed = tempName.trim();
@@ -751,6 +849,249 @@ export default function App() {
     );
   };
 
+  const renderBuiltInBrowserModal = () => {
+    if (!isBrowserModalOpen) return null;
+
+    const quickLinks = [
+      { name: 'Pencarian Web', url: 'https://www.bing.com', icon: '🔍' },
+      { name: 'Wikipedia', url: 'https://id.wikipedia.org', icon: '📖' },
+      { name: 'Cloudflare', url: 'https://1.1.1.1', icon: '⚡' },
+      { name: 'Gateway (.1)', url: 'http://192.168.88.1', icon: '🏢' },
+    ];
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 select-none">
+        <div className="bg-white border border-zinc-300 w-full max-w-5xl h-[88vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          
+          {/* Chrome Tab Bar & Title */}
+          <div className="bg-zinc-900 text-white px-3.5 pt-2 pb-1.5 flex items-center justify-between border-b border-zinc-800 flex-none">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-zinc-800 text-zinc-100 px-3 py-1.5 rounded-t-lg text-xs font-medium border-t-2 border-blue-500 shadow-sm max-w-xs truncate">
+                <Globe className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <span className="truncate">{browserCurrentUrl.replace(/^https?:\/\//i, '') || 'Browser NetSim'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-zinc-400 font-medium hidden sm:inline">
+                NetSim Web Browser (Uji Internet & Gateway)
+              </span>
+              <button 
+                onClick={() => setIsBrowserModalOpen(false)}
+                className="p-1 hover:bg-zinc-800 hover:text-red-400 rounded-lg cursor-pointer transition-colors text-zinc-400"
+                title="Tutup Browser"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Navigation Bar (Toolbar URL, Back, Forward, Reload) */}
+          <div className="bg-zinc-100 px-3 py-2 border-b border-zinc-200 flex items-center gap-2 flex-none">
+            <div className="flex items-center gap-1 text-zinc-600">
+              <button
+                type="button"
+                onClick={handleBrowserBack}
+                disabled={browserHistoryIdx <= 0 || browserLoading}
+                className="p-1.5 hover:bg-zinc-200 disabled:opacity-30 rounded-md cursor-pointer disabled:cursor-not-allowed transition-colors"
+                title="Kembali"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleBrowserForward}
+                disabled={browserHistoryIdx >= browserHistory.length - 1 || browserLoading}
+                className="p-1.5 hover:bg-zinc-200 disabled:opacity-30 rounded-md cursor-pointer disabled:cursor-not-allowed transition-colors"
+                title="Maju"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigateBrowser()}
+                disabled={browserLoading}
+                className="p-1.5 hover:bg-zinc-200 rounded-md cursor-pointer transition-colors"
+                title="Muat Ulang (Reload)"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${browserLoading ? 'animate-spin text-blue-600' : ''}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigateBrowser('https://www.google.com')}
+                disabled={browserLoading}
+                className="p-1.5 hover:bg-zinc-200 rounded-md cursor-pointer transition-colors"
+                title="Halaman Awal (Home)"
+              >
+                <Home className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* URL Input Form */}
+            <form 
+              onSubmit={(e) => { e.preventDefault(); handleNavigateBrowser(); }}
+              className="flex-1 flex items-center gap-2"
+            >
+              <div className="flex-1 bg-white border border-zinc-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 rounded-lg px-2.5 py-1.5 flex items-center gap-2 shadow-2xs">
+                {browserCurrentUrl.startsWith('https://') ? (
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" title="Koneksi Aman (HTTPS)" />
+                ) : (
+                  <Globe className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" title="HTTP Standar" />
+                )}
+                <input
+                  type="text"
+                  value={browserUrlInput}
+                  onChange={(e) => setBrowserUrlInput(e.target.value)}
+                  placeholder="Ketik URL (misal google.com) atau kata kunci pencarian..."
+                  className="w-full text-xs outline-none bg-transparent text-zinc-800 font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={browserLoading || !browserUrlInput.trim()}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs flex items-center gap-1.5"
+              >
+                {browserLoading ? (
+                  <>
+                    <Activity className="w-3.5 h-3.5 animate-spin" />
+                    <span>Memuat...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Buka</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+
+          {/* Bookmark Cepat & Status Diagnostic Bar */}
+          <div className="bg-zinc-50 px-3 py-1.5 border-b border-zinc-200 flex items-center justify-between gap-4 text-xs flex-none overflow-x-auto">
+            {/* Quick Links */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="text-[11px] font-medium text-zinc-400 mr-1">Uji Cepat:</span>
+              {quickLinks.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setBrowserUrlInput(item.url);
+                    handleNavigateBrowser(item.url);
+                  }}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors flex items-center gap-1 cursor-pointer ${
+                    browserCurrentUrl === item.url 
+                      ? 'bg-zinc-200 text-zinc-900 font-semibold' 
+                      : 'hover:bg-zinc-200 text-zinc-600'
+                  }`}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.name}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Diagnostic Inspector Pill */}
+            <div className="flex items-center gap-3 text-[11px] font-mono flex-shrink-0">
+              <div className="flex items-center gap-1">
+                <span className="text-zinc-400 font-sans">Gateway:</span>
+                <span className={`font-semibold ${gatewayActive ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {gatewayActive ? '192.168.88.1 (ONLINE)' : '192.168.88.1 (PUTUS)'}
+                </span>
+              </div>
+
+              {browserResult && gatewayActive && browserResult.success && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <span className="text-zinc-400 font-sans">HTTP:</span>
+                    <span className="text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.2 rounded">
+                      {browserResult.status_code} OK
+                    </span>
+                  </div>
+                  {browserResult.remote_ip && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-zinc-400 font-sans">Server IP:</span>
+                      <span className="text-zinc-700 font-semibold">{browserResult.remote_ip}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <span className="text-zinc-400 font-sans">Latensi:</span>
+                    <span className="text-blue-700 font-semibold">{browserResult.latency_ms}ms</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Browser Viewport */}
+          <div className="flex-1 bg-white relative overflow-hidden flex flex-col">
+            {/* Skenario 1: Gateway Terputus oleh Guru */}
+            {!gatewayActive ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-zinc-50 select-none">
+                <div className="p-4 bg-red-100 text-red-600 rounded-full mb-3 shadow-inner">
+                  <WifiOff className="w-10 h-10" />
+                </div>
+                <h2 className="text-lg font-bold text-zinc-900 mb-1">Tidak Ada Koneksi Internet</h2>
+                <p className="text-xs text-zinc-600 max-w-md leading-relaxed mb-4">
+                  Perangkat tidak dapat mengakses web server di internet karena <strong className="text-red-600">Jalur Gateway (192.168.88.1) sedang diputus</strong> oleh Guru. Paket HTTP/HTTPS dari subnet lokal terhenti di router.
+                </p>
+                <div className="bg-white border border-red-200 rounded-lg p-3 text-left font-mono text-xs text-zinc-700 max-w-sm w-full space-y-1 mb-4 shadow-2xs">
+                  <div className="text-[11px] font-sans font-semibold text-zinc-500 uppercase tracking-wider mb-1">Diagnostik Jaringan:</div>
+                  <div className="flex justify-between"><span>DNS Probe:</span><span className="text-red-600 font-bold">DNS_PROBE_FINISHED_NO_INTERNET</span></div>
+                  <div className="flex justify-between"><span>Status Gateway:</span><span className="text-red-600 font-bold">UNREACHABLE (.1)</span></div>
+                  <div className="flex justify-between"><span>Rute Keluar (WAN):</span><span className="text-red-600 font-bold">BLOCKED (0.0.0.0/0)</span></div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateBrowser()}
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-2 shadow-xs"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Coba Muat Ulang</span>
+                </button>
+              </div>
+            ) : browserLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-zinc-50 select-none">
+                <Activity className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+                <p className="text-xs font-bold text-zinc-800">Menghubungi Server Web...</p>
+                <p className="text-[11px] text-zinc-500 mt-1 font-mono">{browserUrlInput}</p>
+              </div>
+            ) : browserResult?.html ? (
+              <iframe
+                title="NetSim In-App Browser"
+                srcDoc={browserResult.html}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                className="w-full h-full border-0 bg-white"
+              />
+            ) : browserResult?.error_msg ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-zinc-50 select-none">
+                <AlertCircle className="w-8 h-8 text-amber-600 mb-2" />
+                <h3 className="text-sm font-bold text-zinc-800">Gagal Memuat Halaman</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mt-1 mb-4">{browserResult.error_msg}</p>
+                <button
+                  type="button"
+                  onClick={() => handleNavigateBrowser()}
+                  className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-medium cursor-pointer"
+                >
+                  Muat Ulang
+                </button>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center text-zinc-400 select-none">
+                <Globe className="w-10 h-10 mb-2 opacity-40 text-blue-500" />
+                <p className="text-xs font-bold text-zinc-700">NetSim Web Browser</p>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Ketik alamat web atau pilih salah satu tombol uji cepat di atas.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // =========================================================================
   // MODE UTAMA (UNIFIED: GURU & SISWA DENGAN PENYESUAIAN)
   // =========================================================================
@@ -807,6 +1148,7 @@ export default function App() {
         {renderAlertModal()}
         {renderTeacherAlertModal()}
         {renderPasswordModal()}
+        {renderBuiltInBrowserModal()}
 
         {/* Header Bar Utuh */}
         <header className="flex-none h-11 border-b border-zinc-200 px-4 flex items-center justify-between bg-white">
@@ -839,6 +1181,21 @@ export default function App() {
               <KeyRound className="w-3 h-3 text-zinc-500" />
               <span>{role === 'teacher' ? 'Beralih ke Siswa' : 'Masuk Mode Guru'}</span>
               <kbd className="text-[9px] bg-zinc-200/80 text-zinc-600 px-1 py-0.2 rounded font-mono font-normal">Ctrl+S</kbd>
+            </button>
+
+            {/* Tombol Buka Web Browser */}
+            <button
+              onClick={() => {
+                setIsBrowserModalOpen(true);
+                if (!browserResult) {
+                  handleNavigateBrowser('https://www.google.com');
+                }
+              }}
+              className="ml-1 px-2.5 py-0.5 text-[11px] font-medium rounded border border-blue-200 hover:border-blue-300 bg-blue-50/70 hover:bg-blue-100 text-blue-700 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="Buka Web Browser Bawaan untuk Uji Akses Internet"
+            >
+              <Globe className="w-3 h-3 text-blue-600" />
+              <span>Web Browser</span>
             </button>
           </div>
 
@@ -1181,6 +1538,26 @@ export default function App() {
                       : 'Uji Ping LAN'}
                   </span>
                 </button>
+
+                {/* Tombol Cepat Buka Web jika target Internet atau Gateway */}
+                {(isTargetOutside(targetIp) || targetIp.trim().endsWith('.1') || targetIp.trim() === gatewayIp) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const urlToOpen = (targetIp.trim().endsWith('.1') || targetIp.trim() === gatewayIp)
+                        ? 'http://192.168.88.1'
+                        : (targetIp.startsWith('http') ? targetIp : `https://${targetIp.trim()}`);
+                      setBrowserUrlInput(urlToOpen);
+                      setIsBrowserModalOpen(true);
+                      handleNavigateBrowser(urlToOpen);
+                    }}
+                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
+                    title="Buka target ini di Web Browser NetSim"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Buka Web</span>
+                  </button>
+                )}
 
                 {/* Tombol Khusus Mode Guru: Kirim Alert Unicast Pop-up */}
                 {role === 'teacher' && (

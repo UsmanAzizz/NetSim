@@ -58,6 +58,19 @@
   - Tampilan visual ikon `CheckCheck` warna biru cerah (`text-sky-400 font-bold`).
   - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
 
+- [x] Built-in Web Browser untuk Uji Koneksi Internet:
+  - Backend Rust: command `test_web_connection` via `curl.exe` (ekstraksi HTTP status, IP server WAN, latensi, dan HTML), pengalihan pencarian teks ke Bing Search, injeksi script navigasi klik tautan, serta simulasi WebFig Router di `192.168.88.1`.
+  - Frontend React: Modal browser terintegrasi dengan tab bar, address bar, tombol navigasi (Back, Forward, Reload, Home), bookmark cepat (Pencarian Web, Wikipedia, Cloudflare, Gateway).
+  - Strip diagnostik jaringan: status HTTP, IP publik, latensi web, dan rute gateway.
+  - Simulasi offline edukatif: Halaman "Tidak Ada Koneksi Internet" (`DNS_PROBE_FINISHED_NO_INTERNET`) saat Gateway dimatikan oleh Guru.
+  - Validasi build `npm run build` (Exit 0) dan `cargo check` (Exit 0).
+
+- [x] Startup Layar Penuh (Maximized, Bukan Locktask):
+  - Konfigurasi `tauri.conf.json`: `"maximized": true`, `"fullscreen": false`.
+  - Setup Rust `lib.rs`: hook `main_window.maximize()` otomatis saat aplikasi pertama kali diluncurkan.
+
+
+
 
 
 

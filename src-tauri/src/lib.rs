@@ -7,7 +7,7 @@ use std::sync::{Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 use std::process::Command;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -282,6 +282,182 @@ async fn execute_ping(ip: String) -> Result<String, String> {
         
     let result_text = String::from_utf8_lossy(&output.stdout).to_string();
     Ok(result_text)
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct WebFetchResult {
+    pub success: bool,
+    pub status_code: u16,
+    pub remote_ip: String,
+    pub latency_ms: u64,
+    pub html: String,
+    pub final_url: String,
+    pub error_msg: Option<String>,
+}
+
+// Fitur Baru: Built-in Browser untuk Menguji Akses Internet dan Router Gateway
+#[tauri::command]
+async fn test_web_connection(url: String, gateway_active: bool) -> Result<WebFetchResult, String> {
+    let mut normalized_url = url.trim().to_string();
+    if normalized_url.is_empty() {
+        normalized_url = "https://www.bing.com".to_string();
+    } else if !normalized_url.starts_with("http://") && !normalized_url.starts_with("https://") {
+        if normalized_url.contains('.') && !normalized_url.contains(' ') {
+            normalized_url = format!("https://{}", normalized_url);
+        } else {
+            // Gunakan Bing Search untuk query pencarian agar hasil pencarian tampil kaya dan interaktif tanpa proteksi bot
+            normalized_url = format!("https://www.bing.com/search?q={}", normalized_url.replace(' ', "+"));
+        }
+    } else if normalized_url.contains("google.com/search") {
+        // Alihkan search query Google ke Bing agar hasil pencarian tampil penuh dan dapat diklik
+        if let Some(pos) = normalized_url.find("q=") {
+            let q_part = &normalized_url[pos + 2..];
+            let q = q_part.split('&').next().unwrap_or("");
+            normalized_url = format!("https://www.bing.com/search?q={}", q);
+        } else {
+            normalized_url = "https://www.bing.com".to_string();
+        }
+    }
+
+    // Simulasi Portal Router Gateway Lokal
+    if normalized_url.contains("192.168.88.1") {
+        let html = r#"<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RouterOS WebFig - NetSim Lab Gateway</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; display: flex; justify-content: center; align-items: center; min-height: 80vh; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 28px; max-width: 580px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 16px; margin-bottom: 20px; }
+    .title { font-size: 18px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .badge-ok { background: #059669; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 9999px; }
+    .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(51,65,85,0.5); font-size: 13px; }
+    .stat-label { color: #94a3b8; }
+    .stat-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; color: #e2e8f0; }
+    .alert-box { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 12px; margin-top: 18px; font-size: 12px; color: #7dd3fc; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">🏢 NetSim Lab Gateway Router</div>
+      <span class="badge-ok">ONLINE • 192.168.88.1</span>
+    </div>
+    <div class="stat-row"><span class="stat-label">Model Router</span><span class="stat-val">Virtual MikroTik RouterOS v7</span></div>
+    <div class="stat-row"><span class="stat-label">IP Gateway LAN</span><span class="stat-val">192.168.88.1/24</span></div>
+    <div class="stat-row"><span class="stat-label">DHCP Pool</span><span class="stat-val">192.168.88.2 - 192.168.88.254</span></div>
+    <div class="stat-row"><span class="stat-label">DNS Server Forwarder</span><span class="stat-val">8.8.8.8, 1.1.1.1</span></div>
+    <div class="stat-row"><span class="stat-label">NAT Masquerade</span><span class="stat-val" style="color: #34d399;">ENABLED (Koneksi WAN Terbuka)</span></div>
+    <div class="alert-box">
+      <strong>Informasi Pembelajaran:</strong> Komputer siswa di LAN dapat menjangkau web server di internet (Google, Cloudflare, dll) karena router gateway ini menerjemahkan IP privat LAN ke internet publik melalui fitur NAT.
+    </div>
+  </div>
+</body>
+</html>"#.to_string();
+
+        return Ok(WebFetchResult {
+            success: true,
+            status_code: 200,
+            remote_ip: "192.168.88.1".to_string(),
+            latency_ms: 1,
+            html,
+            final_url: normalized_url,
+            error_msg: None,
+        });
+    }
+
+    if !gateway_active {
+        return Ok(WebFetchResult {
+            success: false,
+            status_code: 0,
+            remote_ip: "".to_string(),
+            latency_ms: 0,
+            html: "".to_string(),
+            final_url: normalized_url,
+            error_msg: Some("Gateway (192.168.88.1) Terputus. DNS dan rute keluar WAN tidak dapat dijangkau.".to_string()),
+        });
+    }
+
+    let start = std::time::Instant::now();
+    let mut cmd = Command::new("curl.exe");
+    cmd.arg("-s")
+       .arg("-L")
+       .arg("-m").arg("6")
+       .arg("-A").arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+       .arg("-w").arg("\n__NETSIM_METRICS__\n%{http_code}\n%{time_total}\n%{remote_ip}\n%{url_effective}")
+       .arg(&normalized_url);
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    match cmd.output() {
+        Ok(output) => {
+            let latency = start.elapsed().as_millis() as u64;
+            let full_out = String::from_utf8_lossy(&output.stdout).to_string();
+
+            if let Some(idx) = full_out.rfind("\n__NETSIM_METRICS__\n") {
+                let raw_html = full_out[..idx].to_string();
+                let metrics_str = &full_out[idx + 20..];
+                let lines: Vec<&str> = metrics_str.lines().collect();
+                let status_code = lines.get(0).and_then(|s| s.parse::<u16>().ok()).unwrap_or(200);
+                let remote_ip = lines.get(2).map(|s| s.to_string()).unwrap_or_default();
+                let final_url = lines.get(3).map(|s| s.to_string()).unwrap_or_else(|| normalized_url.clone());
+
+                let script_injection = r#"
+<script>
+document.addEventListener('click', function(e) {
+  var a = e.target.closest('a');
+  if (a && a.href && !a.href.startsWith('javascript:')) {
+    e.preventDefault();
+    window.parent.postMessage({ type: 'netsim-nav', url: a.href }, '*');
+  }
+});
+</script>
+"#;
+                let base_tag = format!("<base href=\"{}\" target=\"_self\">", final_url);
+                let injection = format!("{}{}", base_tag, script_injection);
+
+                let html = if raw_html.to_lowercase().contains("<head>") {
+                    raw_html.replacen("<head>", &format!("<head>{}", injection), 1)
+                } else {
+                    format!("{}{}", injection, raw_html)
+                };
+
+                Ok(WebFetchResult {
+                    success: status_code > 0 && status_code < 500,
+                    status_code,
+                    remote_ip,
+                    latency_ms: latency,
+                    html,
+                    final_url,
+                    error_msg: None,
+                })
+            } else {
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                Ok(WebFetchResult {
+                    success: false,
+                    status_code: 0,
+                    remote_ip: "".to_string(),
+                    latency_ms: latency,
+                    html: "".to_string(),
+                    final_url: normalized_url,
+                    error_msg: Some(if err.is_empty() { "Koneksi time out (Host tidak merespons)".to_string() } else { err }),
+                })
+            }
+        },
+        Err(e) => {
+            Ok(WebFetchResult {
+                success: false,
+                status_code: 0,
+                remote_ip: "".to_string(),
+                latency_ms: 0,
+                html: "".to_string(),
+                final_url: normalized_url,
+                error_msg: Some(format!("Gagal menjalankan browser engine: {}", e)),
+            })
+        }
+    }
 }
 
 // Fitur Baru: Mengirim pesan UDP Unicast ke spesifik IP
@@ -611,9 +787,14 @@ pub fn run() {
         broadcast_chat, 
         update_node_name,
         register_file_for_sharing,
-        save_file_to_downloads
+        save_file_to_downloads,
+        test_web_connection
     ])
     .setup(|app| {
+      if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.maximize();
+      }
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
